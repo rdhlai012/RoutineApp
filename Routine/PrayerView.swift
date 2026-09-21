@@ -134,7 +134,7 @@ struct PrayerView: View {
             .font(.subheadline.weight(.medium))
             .tint(RT.accent)
             .card()
-            .onChange(of: goingOut) { _ in Haptics.selection() }
+            .onChange(of: goingOut) { Haptics.selection() }
     }
 
     // MARK: Live preview

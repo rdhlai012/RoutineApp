@@ -14,7 +14,7 @@ struct RoutineApp: App {
                 .preferredColorScheme(.dark)
                 .onAppear { app.onAppear() }
         }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             if phase == .active { app.onForeground() }
         }
     }
@@ -55,6 +55,6 @@ struct RootView: View {
                 .tag(TabSelection.more)
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
-        .onChange(of: selection) { _ in Haptics.selection() }
+        .onChange(of: selection) { Haptics.selection() }
     }
 }
