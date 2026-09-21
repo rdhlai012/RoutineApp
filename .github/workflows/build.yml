@@ -1,0 +1,103 @@
+name: Build Routine (unsigned IPA)
+
+# Personal sideloading pipeline.
+#
+#   Swift source -> XcodeGen -> xcodebuild (no signing) -> Routine.app
+#                -> Payload/Routine.app -> RoutineApp-Unsigned.ipa -> artifact
+#
+# Signing happens later, on the phone, in eSign, with the certificate and
+# profile already configured there. This workflow holds NO signing secrets,
+# NO certificates and NO provisioning profiles, and it never will.
+#
+# There is deliberately no App Store, App Store Connect or TestFlight step.
+#
+# Manual trigger only, to keep macOS runner minutes down.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test, build, package unsigned IPA
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      # 1. Tests first. Nothing gets built if the core logic is broken.
+      - name: Run RoutineKit unit tests
+        run: swift test
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # 2. Generate the project, then prove the target and scheme names are
+      #    what the build step below actually asks for.
+      - name: Generate Routine.xcodeproj
+        run: xcodegen generate
+
+      - name: Verify target and scheme names
+        run: |
+          set -euo pipefail
+          xcodebuild -list -project Routine.xcodeproj
+          xcodebuild -list -project Routine.xcodeproj | grep -qx "        Routine" \
+            || { echo "::error::Expected a target/scheme named 'Routine'"; exit 1; }
+
+      # 3. Build with signing switched off entirely.
+      - name: Build Routine.app without signing
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project Routine.xcodeproj \
+            -scheme Routine \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            build
+
+      # 4. Confirm the .app really exists before packaging anything.
+      - name: Verify the built .app
+        run: |
+          set -euo pipefail
+          APP="build/Build/Products/Release-iphoneos/Routine.app"
+          test -d "$APP" || { echo "::error::$APP was not produced"; exit 1; }
+          test -f "$APP/Routine" || { echo "::error::executable missing from the bundle"; exit 1; }
+          test -f "$APP/Info.plist" || { echo "::error::Info.plist missing from the bundle"; exit 1; }
+          test -f "$APP/alarm.wav" || { echo "::error::alarm.wav was not bundled"; exit 1; }
+          echo "Bundle contents:"
+          ls -la "$APP"
+
+      # 5. Payload/Routine.app -> RoutineApp-Unsigned.ipa
+      - name: Package RoutineApp-Unsigned.ipa
+        run: |
+          set -euo pipefail
+          APP="build/Build/Products/Release-iphoneos/Routine.app"
+          rm -rf payload RoutineApp-Unsigned.ipa
+          mkdir -p payload/Payload
+          cp -R "$APP" payload/Payload/Routine.app
+          (cd payload && zip -qry ../RoutineApp-Unsigned.ipa Payload)
+          echo "IPA contents (first 20 entries):"
+          unzip -l RoutineApp-Unsigned.ipa | head -n 20
+          ls -lh RoutineApp-Unsigned.ipa
+
+      - name: Upload RoutineApp-Unsigned.ipa
+        uses: actions/upload-artifact@v4
+        with:
+          # UNSIGNED. No signature, no embedded provisioning profile.
+          # It cannot be installed as-is - sign it with eSign on the iPhone first.
+          name: RoutineApp-Unsigned
+          path: RoutineApp-Unsigned.ipa
+          if-no-files-found: error

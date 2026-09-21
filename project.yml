@@ -1,0 +1,50 @@
+name: Routine
+
+options:
+  bundleIdPrefix: com.personal
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "16.0"
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.7"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  Routine:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      # The SwiftUI layer.
+      - path: Routine
+      # The Foundation-only core, compiled straight into the app so there is
+      # exactly one copy of this code (Package.swift builds the same folder
+      # for `swift test`).
+      - path: Sources/RoutineKit
+      # alarm.wav and anything else that ships as-is.
+      - path: Resources
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.personal.routine
+        PRODUCT_NAME: Routine
+        INFOPLIST_FILE: Routine/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"          # iPhone only
+        GENERATE_INFOPLIST_FILE: NO
+        SUPPORTS_MACCATALYST: NO
+        ENABLE_PREVIEWS: YES
+        # No signing material lives in this repository: no certificate,
+        # no private key, no provisioning profile, no team id.
+        # CI builds with CODE_SIGNING_ALLOWED=NO and ships an UNSIGNED ipa.
+        # eSign signs it on the iPhone with the certificate already set up
+        # there. These empty values keep the project buildable with no team.
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: ""
+        DEVELOPMENT_TEAM: ""
+        PROVISIONING_PROFILE_SPECIFIER: ""

@@ -1,0 +1,65 @@
+{
+  "tasks": [
+    {
+      "id": "A26A9A8D-7256-45C5-A633-5EAB8C896FE0",
+      "title": "Wake up",
+      "category": "wake",
+      "time": 290,
+      "alarm": true,
+      "insistent": true,
+      "enabled": true
+    },
+    {
+      "id": "38EFE96D-E991-4277-B906-28607E1D28F9",
+      "title": "Wudu",
+      "category": "hygiene",
+      "anchor": "fajr",
+      "offsetMinutes": -10,
+      "alarm": true
+    },
+    {
+      "id": "EA9E79E2-8F03-4FDD-8100-1002BFE3E5D3",
+      "title": "Morning skincare",
+      "category": "skincare",
+      "anchor": "fajr",
+      "offsetMinutes": 40,
+      "steps": [
+        { "name": "Round Lab Dokdo Cleanser", "enabled": true },
+        { "name": "Dr. Althea 345", "enabled": true },
+        { "name": "Skin1004 SPF 50", "enabled": false }
+      ]
+    },
+    {
+      "id": "091F13A3-1BC7-448D-AC81-CC45202E94B7",
+      "title": "Gym",
+      "category": "fitness",
+      "time": 1240
+    }
+  ],
+  "prayerTimes": {
+    "2026-09-01": {
+      "fajr": "04:58",
+      "dhuhr": "12:15",
+      "asr": "15:38",
+      "maghrib": "18:24",
+      "isha": "19:35"
+    }
+  },
+  "goingOut": {
+    "2026-09-01": true
+  },
+  "days": {
+    "2026-09-01": {
+      "completed": ["A26A9A8D-7256-45C5-A633-5EAB8C896FE0"],
+      "sleepHours": 6.5,
+      "note": "felt good"
+    },
+    "2026-09-02": {
+      "completed": []
+    }
+  },
+  "settings": {
+    "startDate": "2026-09-01",
+    "sleepHours": 7
+  }
+}

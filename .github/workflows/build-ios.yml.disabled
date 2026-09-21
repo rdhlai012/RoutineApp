@@ -1,0 +1,74 @@
+# DISABLED - superseded by build.yml, which is the single active workflow.
+#
+# Renamed (not deleted) so nothing is lost. GitHub only reads .yml/.yaml files
+# in this folder, so this one never runs. Two reasons it was replaced:
+#
+#   1. It triggers on every push and pull request, which contradicts the
+#      requirement to keep macOS runner usage to a manual trigger only.
+#   2. It builds -scheme "RoutineApp", which does not exist. XcodeGen makes a
+#      scheme per target, and the target in project.yml is named "Routine".
+#      build.yml verifies the scheme name before building, so a rename can
+#      never silently break the build again.
+#
+# build.yml also runs `swift test` first and checks the .app really exists
+# (including alarm.wav) before packaging RoutineApp-Unsigned.ipa.
+
+name: Build iOS App
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Unsigned IPA for eSign
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Generate Xcode Project (if project.yml exists)
+        run: |
+          if [ -f "project.yml" ]; then
+            brew install xcodegen
+            xcodegen generate
+          else
+            echo "No project.yml found. Skipping XcodeGen."
+          fi
+
+      - name: Build Unsigned Archive
+        run: |
+          mkdir -p build
+          
+          # We use a placeholder scheme "RoutineApp" assuming its your app target.
+          xcodebuild clean archive \
+            -scheme "RoutineApp" \
+            -destination "generic/platform=iOS" \
+            -archivePath "build/RoutineApp.xcarchive" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Generate Unsigned IPA Payload
+        id: unsigned_ipa
+        run: |
+          mkdir -p build/Payload
+          cp -R build/RoutineApp.xcarchive/Products/Applications/*.app build/Payload/
+          cd build
+          zip -qr RoutineApp-Unsigned.ipa Payload
+          echo "Unsigned IPA payload generated for eSign."
+
+      - name: Upload Unsigned IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RoutineApp-Unsigned
+          path: build/RoutineApp-Unsigned.ipa
