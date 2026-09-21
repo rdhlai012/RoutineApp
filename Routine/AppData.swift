@@ -53,6 +53,20 @@ final class AppData: ObservableObject {
     }
     func completion(for key: String) -> DayCompletion { Stats.completion(dateKey: key, data: data) }
 
+    func insight(for key: String) -> DailyInsight {
+        InsightEngine.insight(on: key, data: data, calendar: calendar)
+    }
+
+    /// The next prayer still to come on `key`, used to highlight one row in the
+    /// timeline. Nil when the date has no times, is not today, or Isha has passed.
+    func nextPrayer(on key: String, now: Date = Date()) -> Prayer? {
+        guard key == todayKey, let times = prayerTimes(on: key) else { return nil }
+        let minutes = calendar.component(.hour, from: now) * 60
+            + calendar.component(.minute, from: now)
+        let current = TimeOfDay(minutes: minutes)
+        return Prayer.allCases.first { times[$0] > current }
+    }
+
     var settings: RoutineSettings { data.settings }
     var tasks: [RoutineTask] { data.tasks }
 

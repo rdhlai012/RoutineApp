@@ -1,67 +1,118 @@
 import SwiftUI
 
-/// A month grid. Each date is coloured by its completion state; tapping one
-/// opens the full day, which stays editable however far in the past it is.
+/// A month heatmap. Each date is a circle whose fill strength is that day's
+/// completion; tapping one opens the full day in a bottom sheet.
 struct CalendarTab: View {
     @EnvironmentObject private var app: AppData
     @State private var month: Date = Calendar.current.startOfDay(for: Date())
     @State private var selected: DateKeyItem?
 
     private let calendar = Calendar.current
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 7)
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
-                    monthHeader
-                    weekdayHeader
-                    grid
+                VStack(spacing: RT.sectionSpacing) {
+                    monthCard
                     legend
+                    monthSummary
+
+                    Color.clear.frame(height: RT.tabBarClearance)
                 }
-                .padding()
+                .padding(.horizontal, RT.screenPadding)
+                .padding(.top, 8)
             }
+            .routineScreen()
             .navigationTitle("Calendar")
+            .navigationBarTitleDisplayMode(.large)
             .sheet(item: $selected) { item in
                 NavigationStack {
-                    DayDetailView(dateKey: item.key)
-                        .environmentObject(app)
+                    DayDetailView(dateKey: item.key).environmentObject(app)
                 }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(RT.background)
             }
         }
+    }
+
+    // MARK: Month
+
+    private var monthCard: some View {
+        VStack(spacing: 18) {
+            monthHeader
+            weekdayHeader
+            grid
+        }
+        .card(padding: nil)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 18)
     }
 
     private var monthHeader: some View {
         HStack {
-            Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left") }
+            Button {
+                Haptics.selection()
+                shiftMonth(-1)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.headline)
+                    .frame(width: RT.minTarget, height: RT.minTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(RT.accent)
+            .accessibilityLabel("Previous month")
+
             Spacer()
-            Text(monthTitle).font(.headline)
+
+            Text(monthTitle)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(RT.label)
+                .contentTransition(.numericText())
+                .accessibilityAddTraits(.isHeader)
+
             Spacer()
-            Button { shiftMonth(1) } label: { Image(systemName: "chevron.right") }
+
+            Button {
+                Haptics.selection()
+                shiftMonth(1)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.headline)
+                    .frame(width: RT.minTarget, height: RT.minTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(RT.accent)
+            .accessibilityLabel("Next month")
         }
     }
 
     private var weekdayHeader: some View {
-        HStack {
-            ForEach(weekdaySymbols, id: \.self) { symbol in
+        HStack(spacing: 8) {
+            ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
                 Text(symbol)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(RT.tertiaryLabel)
                     .frame(maxWidth: .infinity)
             }
         }
+        .accessibilityHidden(true)
     }
 
     private var grid: some View {
-        LazyVGrid(columns: columns, spacing: 6) {
+        LazyVGrid(columns: columns, spacing: 8) {
             ForEach(Array(gridDays.enumerated()), id: \.offset) { _, day in
                 if let day = day {
                     dayCell(day)
                 } else {
-                    Color.clear.frame(height: 44)
+                    Color.clear.aspectRatio(1, contentMode: .fit)
                 }
             }
         }
+        .animation(.routineSpring, value: month)
     }
 
     private func dayCell(_ date: Date) -> some View {
@@ -70,50 +121,130 @@ struct CalendarTab: View {
         let isToday = key == app.todayKey
         let isFuture = date > calendar.startOfDay(for: Date())
         let state: DayState = isFuture ? .noData : completion.state
+        let missingTimes = !isFuture && app.prayerTimes(on: key) == nil
+
+        // Heatmap: stronger fill the closer the day got to finished.
+        let strength: Double = {
+            guard !isFuture else { return 0 }
+            switch state {
+            case .complete: return 1
+            case .partial: return max(0.22, completion.fraction * 0.85)
+            case .missed: return 0.28
+            case .noData: return 0
+            }
+        }()
+        let fill: Color = state == .missed ? .red : RT.done
 
         return Button {
+            Haptics.selection()
             selected = DateKeyItem(key)
         } label: {
-            VStack(spacing: 4) {
-                Text("\(calendar.component(.day, from: date))")
-                    .font(.footnote)
-                    .foregroundColor(.primary)
-                Circle()
-                    .fill(state.color)
-                    .frame(width: 8, height: 8)
-                if app.prayerTimes(on: key) == nil {
-                    Text("·").font(.caption2).foregroundColor(.orange)
-                } else {
-                    Text(" ").font(.caption2)
+            ZStack {
+                Circle().fill(fill.opacity(strength))
+                if strength == 0 {
+                    Circle().fill(Color.white.opacity(isFuture ? 0.03 : 0.06))
+                }
+                if isToday {
+                    Circle().strokeBorder(RT.accent, lineWidth: 2)
+                }
+
+                VStack(spacing: 2) {
+                    Text("\(calendar.component(.day, from: date))")
+                        .font(.footnote.weight(isToday ? .bold : .medium))
+                        .foregroundStyle(strength > 0.6 ? Color.black : RT.label.opacity(isFuture ? 0.35 : 1))
+                        .monospacedDigit()
+
+                    Circle()
+                        .fill(missingTimes ? RT.prayer : Color.clear)
+                        .frame(width: 4, height: 4)
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 44)
-            .background(isToday ? Color.accentColor.opacity(0.15) : Color.clear)
-            .cornerRadius(8)
+            .aspectRatio(1, contentMode: .fit)
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel(key: key, date: date, state: state,
+                                               completion: completion,
+                                               isFuture: isFuture,
+                                               missingTimes: missingTimes))
     }
+
+    private func accessibilityLabel(key: String, date: Date, state: DayState,
+                                    completion: DayCompletion, isFuture: Bool,
+                                    missingTimes: Bool) -> String {
+        var parts = [DateKey.longDisplay(key, calendar: calendar)]
+        if isFuture {
+            parts.append("upcoming")
+        } else {
+            parts.append("\(completion.percent) percent, \(state.displayName)")
+        }
+        if missingTimes { parts.append("prayer times not entered") }
+        return parts.joined(separator: ", ")
+    }
+
+    // MARK: Legend and summary
 
     private var legend: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            legendRow(.complete, "Complete (100%)")
-            legendRow(.partial, "Partial")
-            legendRow(.missed, "Missed")
-            legendRow(.noData, "No data")
-            Label("A small dot means that date has no prayer times.",
-                  systemImage: "exclamationmark.circle")
-                .font(.caption2)
-                .foregroundColor(.orange)
+        HStack(spacing: 8) {
+            legendPill(.complete, "Complete")
+            legendPill(.partial, "Partial")
+            legendPill(.missed, "Missed")
+            legendPill(.noData, "No data")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Legend: green complete, yellow partial, red missed, grey no data")
     }
 
-    private func legendRow(_ state: DayState, _ text: String) -> some View {
-        HStack(spacing: 8) {
-            Circle().fill(state.color).frame(width: 8, height: 8)
-            Text(text).font(.caption)
+    private func legendPill(_ state: DayState, _ text: String) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(state.color).frame(width: 7, height: 7)
+            Text(text)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(RT.secondaryLabel)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(RT.surface, in: Capsule())
+    }
+
+    private var monthSummary: some View {
+        let keys = gridDays.compactMap { $0 }.map { DateKey.string(from: $0, calendar: calendar) }
+        let past = keys.filter { key in
+            guard let date = DateKey.date(from: key, calendar: calendar) else { return false }
+            return date <= calendar.startOfDay(for: Date())
+        }
+        let completions = past.map { app.completion(for: $0) }
+        let complete = completions.filter { $0.state == .complete }.count
+        let partial = completions.filter { $0.state == .partial }.count
+        let missingTimes = past.filter { app.prayerTimes(on: $0) == nil }.count
+
+        return VStack(alignment: .leading, spacing: 14) {
+            SectionHeader("This month")
+            VStack(spacing: 12) {
+                summaryRow("Days complete", "\(complete)")
+                Divider().overlay(RT.hairline)
+                summaryRow("Days partial", "\(partial)")
+                Divider().overlay(RT.hairline)
+                summaryRow("Missing prayer times", "\(missingTimes)",
+                           tint: missingTimes > 0 ? RT.prayer : RT.secondaryLabel)
+            }
+            .card()
+        }
+    }
+
+    private func summaryRow(_ title: String, _ value: String, tint: Color = RT.secondaryLabel) -> some View {
+        HStack {
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(RT.label)
+            Spacer()
+            Text(value)
+                .font(.subheadline.monospacedDigit().weight(.semibold))
+                .foregroundStyle(tint)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: Month maths
@@ -151,7 +282,7 @@ struct CalendarTab: View {
 
     private func shiftMonth(_ delta: Int) {
         if let moved = calendar.date(byAdding: .month, value: delta, to: month) {
-            month = moved
+            withAnimation(.routineSpring) { month = moved }
         }
     }
 }

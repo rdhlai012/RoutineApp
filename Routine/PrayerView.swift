@@ -5,7 +5,7 @@ import SwiftUI
 /// times are entered and a date is scheduled.
 struct PrayerView: View {
     let dateKey: String
-    /// Set when the screen is shown as a tab rather than a sheet.
+    /// True when shown as a tab rather than as a sheet.
     var embedded: Bool = false
 
     @EnvironmentObject private var app: AppData
@@ -36,140 +36,230 @@ struct PrayerView: View {
     }
 
     var body: some View {
-        Group {
-            if embedded {
-                NavigationStack { form }
-            } else {
-                NavigationStack {
-                    form
-                        .toolbar {
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button("Close") { dismiss() }
-                            }
+        NavigationStack {
+            form
+                .toolbar {
+                    if !embedded {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { dismiss() }
                         }
+                    }
                 }
-            }
         }
         .onAppear(perform: loadOnce)
     }
 
     private var form: some View {
-        List {
-            header
-            pickers
-            goingOutSection
-            previewSection
-            saveSection
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: RT.sectionSpacing) {
+                header
+                pickers
+                goingOutRow
+                previewSection
+                saveSection
+
+                Color.clear.frame(height: RT.tabBarClearance)
+            }
+            .padding(.horizontal, RT.screenPadding)
+            .padding(.top, 8)
         }
+        .routineScreen()
         .navigationTitle(isTomorrow ? "Set Up Tomorrow" : "Prayer Times")
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    // MARK: Sections
+    // MARK: Header
 
     private var header: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(DateKey.longDisplay(dateKey)).font(.headline)
-                if isDraft {
-                    Label("Draft - not saved", systemImage: "pencil.circle")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                } else {
-                    Label("Saved", systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundColor(.green)
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            Text(DateKey.longDisplay(dateKey))
+                .font(.largeTitle.weight(.bold))
+                .foregroundStyle(RT.label)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(isDraft ? RT.prayer : RT.done)
+                    .frame(width: 7, height: 7)
+                Text(isDraft ? "Draft - not saved" : "Saved")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(isDraft ? RT.prayer : RT.done)
             }
+            .animation(.routineSpring, value: isDraft)
         }
+        .accessibilityElement(children: .combine)
     }
+
+    // MARK: Pickers
 
     private var pickers: some View {
-        Section {
-            ForEach(Prayer.allCases) { prayer in
-                OptionalTimeOfDayPicker(title: prayer.displayName,
-                                        placeholder: placeholder(for: prayer),
-                                        value: Binding(
-                                            get: { draft[prayer] },
-                                            set: { draft[prayer] = $0 }))
+        VStack(alignment: .leading, spacing: 14) {
+            SectionHeader("All five times")
+
+            VStack(spacing: 10) {
+                ForEach(Prayer.allCases) { prayer in
+                    CapsuleTimePicker(prayer: prayer,
+                                      placeholder: placeholder(for: prayer),
+                                      value: Binding(
+                                        get: { draft[prayer] },
+                                        set: { draft[prayer] = $0 }))
+                }
             }
-        } header: {
-            Text("All five times")
-        } footer: {
-            Text("Every prayer is required. The pickers start from today's times "
-                 + "for convenience; nothing is scheduled until you save.")
+
+            if let previous = previousDayTimes {
+                Button {
+                    Haptics.selection()
+                    withAnimation(.routineSpring) { draft = PrayerTimesDraft(previous) }
+                } label: {
+                    Label("Copy the previous day", systemImage: "doc.on.doc")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: RT.minTarget)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(RT.accent)
+                .card(padding: nil)
+            }
+
+            Text("Every prayer is required. Pickers start from the nearest known day for convenience; nothing is scheduled until you save.")
+                .font(.caption)
+                .foregroundStyle(RT.tertiaryLabel)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var goingOutSection: some View {
-        Section {
-            Toggle(isTomorrow ? "I'm going out tomorrow" : "I'm going out this day",
-                   isOn: $goingOut)
-        } footer: {
-            Text("Off by default. Turning it on adds the extra sunscreen reminders for this date only.")
-        }
+    private var goingOutRow: some View {
+        Toggle(isTomorrow ? "I'm going out tomorrow" : "I'm going out this day",
+               isOn: $goingOut)
+            .font(.subheadline.weight(.medium))
+            .tint(RT.accent)
+            .card()
+            .onChange(of: goingOut) { _ in Haptics.selection() }
     }
+
+    // MARK: Live preview
 
     @ViewBuilder
     private var previewSection: some View {
-        if let times = draft.completed {
-            let result = TomorrowSetup.preview(dateKey: dateKey,
-                                               times: times,
-                                               data: previewData)
-            Section("Preview") {
-                ForEach(result.schedule) { planned in
-                    PlannedRow(planned: planned, isComplete: false, toggle: nil)
+        VStack(alignment: .leading, spacing: 14) {
+            SectionHeader("Preview")
+
+            if let times = draft.completed {
+                let result = TomorrowSetup.preview(dateKey: dateKey,
+                                                   times: times,
+                                                   data: previewData)
+                VStack(spacing: 0) {
+                    ForEach(Array(result.schedule.enumerated()), id: \.element.id) { index, planned in
+                        previewRow(planned, isLast: index == result.schedule.count - 1)
+                    }
                 }
-            }
-            Section("Checks") {
-                ConflictList(conflicts: result.conflicts)
-            }
-        } else {
-            Section("Preview") {
-                Text("Enter all five times to see the full day.")
-                    .foregroundColor(.secondary)
+                .card(padding: nil)
+                .padding(.horizontal, RT.cardPadding)
+                .padding(.vertical, 6)
+
+                ConflictList(conflicts: result.conflicts).card()
+            } else {
+                VStack(spacing: 8) {
+                    Text("Enter all five times")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(RT.label)
+                    Text(missingSummary)
+                        .font(.footnote)
+                        .foregroundStyle(RT.secondaryLabel)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+                .card(padding: nil)
             }
         }
     }
 
+    /// One step of the generated chain, with a connector down to the next.
+    private func previewRow(_ planned: PlannedTask, isLast: Bool) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(spacing: 0) {
+                Circle()
+                    .fill(planned.task.isProtected ? RT.prayer : RT.accent.opacity(0.7))
+                    .frame(width: 8, height: 8)
+                    .padding(.top, 6)
+                if !isLast {
+                    Rectangle()
+                        .fill(RT.hairline)
+                        .frame(width: 1)
+                        .frame(maxHeight: .infinity)
+                }
+            }
+            .frame(width: 8)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(planned.task.title)
+                    .font(.subheadline.weight(planned.task.isProtected ? .semibold : .regular))
+                    .foregroundStyle(RT.label)
+                if let note = planned.task.note, !note.isEmpty {
+                    Text(note)
+                        .font(.caption2)
+                        .foregroundStyle(RT.tertiaryLabel)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            Text(planned.time?.description ?? "-")
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(RT.secondaryLabel)
+        }
+        .padding(.vertical, 9)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var missingSummary: String {
+        let missing = draft.missing.map(\.displayName)
+        if missing.isEmpty { return "" }
+        return "Still needed: " + missing.joined(separator: ", ")
+    }
+
+    // MARK: Save
+
     private var saveSection: some View {
-        Section {
+        VStack(spacing: 14) {
             Button {
                 Task { await save() }
             } label: {
-                HStack {
-                    Spacer()
+                HStack(spacing: 8) {
+                    if saving { ProgressView().tint(.white) }
                     Text(isTomorrow ? "SAVE TOMORROW'S TIMES" : "SAVE TIMES")
                         .font(.headline)
-                    Spacer()
                 }
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 52)
             }
             .buttonStyle(.borderedProminent)
+            .tint(RT.accent)
             .disabled(!TomorrowSetup.canSave(draft) || saving)
 
-            Button {
-                copyPreviousDay()
-            } label: {
-                HStack {
-                    Spacer()
-                    Text("COPY PREVIOUS DAY")
-                        .font(.subheadline)
-                    Spacer()
-                }
-            }
-            .buttonStyle(.bordered)
-            .disabled(previousDayTimes == nil || saving)
-
             if let reason = TomorrowSetup.saveBlockedReason(draft) {
-                Text(reason).font(.footnote).foregroundColor(.secondary)
-            }
-            if let errorMessage = errorMessage {
-                Text(errorMessage).font(.footnote).foregroundColor(.red)
-            }
-            if let outcome = outcome {
-                Text(outcome.message(label: label))
+                Text(reason)
                     .font(.footnote)
-                    .foregroundColor(outcome.isSuccess ? .green : .red)
+                    .foregroundStyle(RT.secondaryLabel)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+            }
+
+            if let errorMessage = errorMessage {
+                Label(errorMessage, systemImage: "xmark.octagon.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let outcome = outcome {
+                Label(outcome.message(label: label),
+                      systemImage: outcome.isSuccess ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(outcome.isSuccess ? RT.done : .red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .card()
             }
         }
     }
@@ -177,14 +267,8 @@ struct PrayerView: View {
     // MARK: Helpers
 
     private var previousDayTimes: PrayerTimes? {
-        guard let prevKey = DateKey.offset(dateKey, byDays: -1) else { return nil }
-        return app.prayerTimes(on: prevKey)
-    }
-
-    private func copyPreviousDay() {
-        if let times = previousDayTimes {
-            draft = PrayerTimesDraft(times)
-        }
+        guard let previousKey = DateKey.offset(dateKey, byDays: -1) else { return nil }
+        return app.prayerTimes(on: previousKey)
     }
 
     /// A copy with this date's going-out choice applied, so the preview matches
@@ -197,6 +281,7 @@ struct PrayerView: View {
 
     private func placeholder(for prayer: Prayer) -> TimeOfDay {
         if let saved = saved { return saved[prayer] }
+        if let previous = previousDayTimes { return previous[prayer] }
         if let today = app.prayerTimes(on: app.todayKey) { return today[prayer] }
         switch prayer {
         case .fajr: return TimeOfDay(hour: 5, minute: 0)
@@ -210,9 +295,7 @@ struct PrayerView: View {
     private func loadOnce() {
         guard !loaded else { return }
         loaded = true
-        if let saved = saved {
-            draft = PrayerTimesDraft(saved)
-        }
+        if let saved = saved { draft = PrayerTimesDraft(saved) }
         goingOut = app.isGoingOut(on: dateKey)
     }
 
@@ -225,9 +308,11 @@ struct PrayerView: View {
         let result = await app.savePrayerTimes(draft, on: dateKey)
         switch result {
         case .failure(let error):
+            Haptics.failure()
             errorMessage = error.message
             outcome = nil
         case .success(let value):
+            value.isSuccess ? Haptics.success() : Haptics.warning()
             outcome = value
             errorMessage = nil
         }

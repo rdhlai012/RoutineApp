@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Stats, sleep settings, notification status and the test alarm.
+/// Settings, in native grouped cells: streaks, sleep, goals, notifications,
+/// data and about.
 struct MoreView: View {
     @EnvironmentObject private var app: AppData
     @EnvironmentObject private var scheduler: NotificationScheduler
@@ -11,91 +12,62 @@ struct MoreView: View {
         NavigationStack {
             List {
                 statsSection
+                sleepSection
+                goalsSection
                 notificationSection
-                sleepSettingsSection
-                thresholdSection
+                dataSection
                 aboutSection
+
+                Color.clear
+                    .frame(height: RT.tabBarClearance)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
-            .navigationTitle("More")
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(RT.background.ignoresSafeArea())
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.large)
             .task { await scheduler.refreshAuthorization() }
         }
     }
 
-    // MARK: Stats
+    // MARK: Streaks
 
     private var statsSection: some View {
-        Section("Days passed") {
+        Section {
             let stats = app.stats
-            row("Started", DateKey.longDisplay(app.settings.startDateKey))
             row("Day", "\(stats.dayNumber)")
             row("Current streak", "\(stats.currentStreak)")
             row("Longest streak", "\(stats.longestStreak)")
             row("Good days", "\(stats.goodDays) of \(stats.daysRecorded)")
-        }
-    }
-
-    // MARK: Notifications
-
-    private var notificationSection: some View {
-        Section {
-            row("Permission", scheduler.authorizationDescription)
-            row("Pending reminders", "\(scheduler.pendingCount)")
-            if scheduler.lastTruncatedCount > 0 {
-                Text("\(scheduler.lastTruncatedCount) later reminders were skipped to stay "
-                     + "under the iOS limit of 64 pending notifications.")
-                    .font(.caption).foregroundColor(.orange)
-            }
-
-            if scheduler.isDenied {
-                Label("Notifications are blocked. Open iOS Settings > Notifications > Routine "
-                      + "and allow them, or nothing will ring.", systemImage: "bell.slash")
-                    .font(.footnote).foregroundColor(.red)
-            } else if scheduler.authorizationStatus == .notDetermined {
-                Button("Allow notifications") {
-                    Task { await scheduler.requestAuthorization() }
-                }
-            }
-
-            Button("Send test alarm") {
-                Task {
-                    await scheduler.sendTestAlarm()
-                    testSent = true
-                }
-            }
-            if testSent {
-                Text("Test alarm will fire in about 10 seconds. Lock the phone to hear it properly.")
-                    .font(.caption).foregroundColor(.secondary)
-            }
-
-            Button("Re-apply the whole schedule") {
-                Task { await scheduler.reschedule(data: app.data) }
-            }
+            row("Started", DateKey.longDisplay(app.settings.startDateKey))
         } header: {
-            Text("Notifications")
-        } footer: {
-            Text("These are local notifications. They can NOT bypass Silent mode, a Focus, or "
-                 + "Do Not Disturb, and they are not Clock alarms. Keep a Clock alarm as a backup "
-                 + "for the 4:50 wake-up.")
+            Text("Progress")
         }
+        .listRowBackground(RT.surface)
     }
 
-    // MARK: Sleep settings
+    // MARK: Sleep
 
-    private var sleepSettingsSection: some View {
+    private var sleepSection: some View {
         Section {
-            TimeOfDayPicker(title: "Fixed wake time",
+            TimeOfDayPicker(title: "Wake time",
                             value: Binding(get: { app.settings.wakeTime },
                                            set: { value in mutate { $0.wakeTime = value } }))
+
             Stepper(value: Binding(get: { app.settings.goalSleepMinutes },
                                    set: { value in mutate { $0.goalSleepMinutes = value } }),
                     in: 240...600, step: 15) {
-                Text("Goal \(SleepMath.describe(minutes: app.settings.goalSleepMinutes))")
+                labelled("Goal sleep", SleepMath.describe(minutes: app.settings.goalSleepMinutes))
             }
+
             Stepper(value: Binding(get: { app.settings.minimumSleepMinutes },
                                    set: { value in mutate { $0.minimumSleepMinutes = value } }),
                     in: 180...600, step: 15) {
-                Text("Minimum \(SleepMath.describe(minutes: app.settings.minimumSleepMinutes))")
+                labelled("Minimum sleep", SleepMath.describe(minutes: app.settings.minimumSleepMinutes))
             }
+
             row("Target bedtime", app.settings.targetBedtime.description)
             row("Latest bedtime", app.settings.latestBedtime.description)
         } header: {
@@ -103,34 +75,144 @@ struct MoreView: View {
         } footer: {
             Text("The wake time is shared with the Wake up task in your routine.")
         }
+        .listRowBackground(RT.surface)
     }
 
-    private var thresholdSection: some View {
+    // MARK: Goals
+
+    private var goalsSection: some View {
         Section {
-            Stepper(value: Binding(get: { Int(app.settings.goodDayThreshold * 100) },
+            Stepper(value: Binding(get: { Int((app.settings.goodDayThreshold * 100).rounded()) },
                                    set: { value in mutate { $0.goodDayThreshold = Double(value) / 100 } }),
                     in: 50...100, step: 5) {
-                Text("Good day at \(Int(app.settings.goodDayThreshold * 100))%")
+                labelled("Completion target", "\(Int((app.settings.goodDayThreshold * 100).rounded()))%")
             }
+
             Stepper(value: Binding(get: { app.settings.nudgeOffsetAfterMaghrib },
                                    set: { value in mutate { $0.nudgeOffsetAfterMaghrib = value } }),
                     in: 0...120, step: 5) {
-                Text("Evening nudge: Maghrib + \(app.settings.nudgeOffsetAfterMaghrib) min")
+                labelled("Evening reminder", "Maghrib + \(app.settings.nudgeOffsetAfterMaghrib) min")
             }
         } header: {
-            Text("Targets")
+            Text("Daily goals")
         } footer: {
-            Text("The nudge is a one-off reminder each evening to enter tomorrow's times. "
-                 + "It cancels itself once tomorrow is saved.")
+            Text("The evening reminder is a one-off nudge to enter tomorrow's times. It cancels itself once tomorrow is saved.")
         }
+        .listRowBackground(RT.surface)
     }
 
-    private var aboutSection: some View {
-        Section("About") {
-            Text("Routine keeps everything on this iPhone. No account, no server, no network.")
-                .font(.footnote).foregroundColor(.secondary)
-            NavigationLink("Sleep log") { SleepView() }
+    // MARK: Notifications
+
+    private var notificationSection: some View {
+        Section {
+            HStack {
+                Text("Permission")
+                Spacer()
+                HStack(spacing: 7) {
+                    Circle()
+                        .fill(scheduler.isDenied ? Color.red : RT.done)
+                        .frame(width: 7, height: 7)
+                    Text(scheduler.authorizationDescription)
+                        .foregroundStyle(RT.secondaryLabel)
+                }
+            }
+            .accessibilityElement(children: .combine)
+
+            row("Pending reminders", "\(scheduler.pendingCount)")
+
+            if scheduler.lastTruncatedCount > 0 {
+                Text("\(scheduler.lastTruncatedCount) later reminders were skipped to stay under the iOS limit of 64 pending notifications.")
+                    .font(.caption)
+                    .foregroundStyle(RT.prayer)
+            }
+
+            if scheduler.isDenied {
+                Label("Blocked. Open iOS Settings > Notifications > Routine and allow them, or nothing will ring.",
+                      systemImage: "bell.slash.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            } else if scheduler.authorizationStatus == .notDetermined {
+                Button("Allow notifications") {
+                    Task { await scheduler.requestAuthorization() }
+                }
+            }
+
+            Button {
+                Haptics.selection()
+                Task {
+                    await scheduler.sendTestAlarm()
+                    testSent = true
+                }
+            } label: {
+                Label("Send test alarm", systemImage: "alarm.waves.left.and.right.fill")
+            }
+
+            if testSent {
+                Text("Test alarm fires in about 10 seconds. Lock the phone to hear it properly.")
+                    .font(.caption)
+                    .foregroundStyle(RT.secondaryLabel)
+            }
+
+            Button {
+                Task { await scheduler.reschedule(data: app.data) }
+            } label: {
+                Label("Re-apply the whole schedule", systemImage: "arrow.clockwise")
+            }
+        } header: {
+            Text("Notifications")
+        } footer: {
+            Text("These are local notifications. They can NOT bypass Silent mode, a Focus, or Do Not Disturb, and they are not Clock alarms. Keep a Clock alarm as a backup for the wake-up.")
         }
+        .listRowBackground(RT.surface)
+    }
+
+    // MARK: Data
+
+    private var dataSection: some View {
+        Section {
+            NavigationLink {
+                SleepView()
+            } label: {
+                Label("Sleep log", systemImage: "bed.double.fill")
+            }
+
+            // The routine editor lives in its own tab. Pushing it here would
+            // nest a second NavigationStack inside this one.
+            Label("Edit the routine in the Routine tab", systemImage: "checklist")
+                .font(.footnote)
+                .foregroundStyle(RT.secondaryLabel)
+        } header: {
+            Text("Data")
+        } footer: {
+            Text("Everything is stored in routine.json on this iPhone. No account, no server, no network.")
+        }
+        .listRowBackground(RT.surface)
+    }
+
+    // MARK: About
+
+    private var aboutSection: some View {
+        Section {
+            row("Version", appVersion)
+            row("Deployment target", "iOS 26.0")
+            HStack {
+                Text("Privacy")
+                Spacer()
+                Text("On device only")
+                    .foregroundStyle(RT.secondaryLabel)
+            }
+            .accessibilityElement(children: .combine)
+        } header: {
+            Text("About")
+        }
+        .listRowBackground(RT.surface)
+    }
+
+    private var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = info?["CFBundleVersion"] as? String ?? "1"
+        return "\(short) (\(build))"
     }
 
     // MARK: Helpers
@@ -145,7 +227,20 @@ struct MoreView: View {
         HStack {
             Text(title)
             Spacer()
-            Text(value).foregroundColor(.secondary).monospacedDigit()
+            Text(value)
+                .foregroundStyle(RT.secondaryLabel)
+                .monospacedDigit()
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func labelled(_ title: String, _ value: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value)
+                .foregroundStyle(RT.secondaryLabel)
+                .monospacedDigit()
         }
     }
 }

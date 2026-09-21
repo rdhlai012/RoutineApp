@@ -23,7 +23,7 @@ concurrency:
 jobs:
   build:
     name: Test, build, package unsigned IPA
-    runs-on: macos-14
+    runs-on: macos-26
 
     steps:
       - uses: actions/checkout@v4
@@ -76,6 +76,7 @@ jobs:
           test -d "$APP" || { echo "::error::$APP was not produced"; exit 1; }
           test -f "$APP/Routine" || { echo "::error::executable missing from the bundle"; exit 1; }
           test -f "$APP/Info.plist" || { echo "::error::Info.plist missing from the bundle"; exit 1; }
+          test -f "$APP/Assets.car" || { echo "::error::asset catalog (app icon) was not compiled in"; exit 1; }
           test -f "$APP/alarm.wav" || { echo "::error::alarm.wav was not bundled"; exit 1; }
           echo "Bundle contents:"
           ls -la "$APP"

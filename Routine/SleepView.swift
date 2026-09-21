@@ -49,6 +49,8 @@ struct SleepView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(RT.background.ignoresSafeArea())
         .navigationTitle("Sleep")
     }
 

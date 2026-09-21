@@ -72,6 +72,8 @@ struct DayDetailView: View {
                     .disabled(noteDraft == (app.day(dateKey)?.note ?? ""))
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(RT.background.ignoresSafeArea())
         .navigationTitle(DateKey.longDisplay(dateKey))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { noteDraft = app.day(dateKey)?.note ?? "" }
