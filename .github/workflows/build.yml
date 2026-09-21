@@ -49,7 +49,7 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild -list -project Routine.xcodeproj
-          xcodebuild -list -project Routine.xcodeproj | grep -qx "        Routine" \
+          xcodebuild -list -project Routine.xcodeproj | grep -qE "^[[:space:]]+Routine$" \
             || { echo "::error::Expected a target/scheme named 'Routine'"; exit 1; }
 
       # 3. Build with signing switched off entirely.
