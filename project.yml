@@ -1,11 +1,12 @@
 name: Routine
 
 options:
-  # XcodeGen defaults to objectVersion 77 (Xcode 16.3+), which Xcode 15.4 on
-  # the macos-14 runner refuses to open ("future Xcode project file format").
-  # 56 is readable by Xcode 14 and up, including the CI image and any newer
-  # Xcode you open this in locally.
-  objectVersion: 56
+  # XcodeGen's default project format is too new for the Xcode 15.4 that
+  # ships on the macos-14 runner, which rejects it with "future Xcode
+  # project file format (77)". `projectFormat` is the real option for this;
+  # `objectVersion` is not an XcodeGen key at all and was silently ignored.
+  # xcode15_0 is readable by Xcode 15.4 in CI and by anything newer locally.
+  projectFormat: xcode15_0
   bundleIdPrefix: com.personal
   createIntermediateGroups: true
   deploymentTarget:
