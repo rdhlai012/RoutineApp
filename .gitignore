@@ -24,3 +24,6 @@ ExportOptions.plist
 *.swp
 .vscode/
 .idea/
+
+# stray CI log downloads
+job*.log
