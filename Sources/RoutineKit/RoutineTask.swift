@@ -231,8 +231,16 @@ public struct RoutineTask: Codable, Hashable, Identifiable, Sendable {
         title = try c.decodeIfPresent(String.self, forKey: .title) ?? "Untitled"
         note = try c.decodeIfPresent(String.self, forKey: .note)
         category = try c.decodeIfPresent(TaskCategory.self, forKey: .category) ?? .other
-        timing = try c.decodeIfPresent(TaskTiming.self, forKey: .timing)
-            ?? .fixed(TimeOfDay(hour: 9, minute: 0))
+        // v1 nests the timing under "timing". v0 wrote its fields inline on the
+        // task itself, so fall back to reading them from this same container
+        // before giving up on a placeholder.
+        if let nested = try c.decodeIfPresent(TaskTiming.self, forKey: .timing) {
+            timing = nested
+        } else if let inline = try RoutineTask.inlineTiming(from: c) {
+            timing = inline
+        } else {
+            timing = .fixed(TimeOfDay(hour: 9, minute: 0))
+        }
         alarm = try c.decodeIfPresent(Bool.self, forKey: .alarm) ?? true
         insistent = try c.decodeIfPresent(Bool.self, forKey: .insistent) ?? false
         onlyWhenGoingOut = try c.decodeIfPresent(Bool.self, forKey: .onlyWhenGoingOut) ?? false
@@ -262,6 +270,28 @@ public struct RoutineTask: Codable, Hashable, Identifiable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, title, note, category, timing, alarm, insistent
         case onlyWhenGoingOut, enabled, steps, protectedPrayer, isPrayerPreparation
+        // v0 wrote the timing inline on the task. Read-only.
+        case time, minutes, anchor, anchorPrayer, prayer, offset, offsetMinutes
+    }
+
+    /// Reads a v0 task's inline timing fields. An anchor wins over a fixed
+    /// time if a file somehow carries both. Returns nil when neither is there.
+    private static func inlineTiming(from c: KeyedDecodingContainer<CodingKeys>) throws -> TaskTiming? {
+        var prayerRaw = try c.decodeIfPresent(String.self, forKey: .prayer)
+        if prayerRaw == nil { prayerRaw = try c.decodeIfPresent(String.self, forKey: .anchor) }
+        if prayerRaw == nil { prayerRaw = try c.decodeIfPresent(String.self, forKey: .anchorPrayer) }
+
+        if let prayer = prayerRaw.flatMap({ Prayer(rawValue: $0.lowercased()) }) {
+            var offset = try c.decodeIfPresent(Int.self, forKey: .offset)
+            if offset == nil { offset = try c.decodeIfPresent(Int.self, forKey: .offsetMinutes) }
+            return .anchored(prayer: prayer, offset: offset ?? 0)
+        }
+
+        var fixed = try c.decodeIfPresent(TimeOfDay.self, forKey: .time)
+        if fixed == nil { fixed = try c.decodeIfPresent(TimeOfDay.self, forKey: .minutes) }
+        if let fixed = fixed { return .fixed(fixed) }
+
+        return nil
     }
 }
 
